@@ -15,6 +15,8 @@ export function useSpeechRecognition() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const finalTranscriptRef = useRef("");
   const lastResultIndexRef = useRef(0);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasReceivedAudioRef = useRef(false);
 
   // Initialize Speech Recognition once
   const initializeSpeechRecognition = useCallback(() => {
@@ -42,10 +44,39 @@ export function useSpeechRecognition() {
       recognition.onstart = () => {
         setListening(true);
         setError(null);
-        console.log("Speech recognition started");
+        hasReceivedAudioRef.current = false;
+        console.log("Speech recognition started - listening for audio...");
+        
+        // Set a timeout to stop listening if no audio is detected
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+        }
+        silenceTimeoutRef.current = setTimeout(() => {
+          if (!hasReceivedAudioRef.current && recognitionRef.current && listening) {
+            console.warn("No audio detected after 10 seconds - stopping recognition");
+            try {
+              recognitionRef.current.abort();
+            } catch (e) {
+              // Ignore
+            }
+            recognitionRef.current = null;
+            initializedRef.current = false;
+            setListening(false);
+            setError("No audio detected. Please check your microphone and try again.");
+          }
+        }, 10000);
       };
 
       recognition.onresult = (event: any) => {
+        // Mark that we've received audio
+        hasReceivedAudioRef.current = true;
+        
+        // Clear the silence timeout since we got audio
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+        
         let interimTranscript = "";
 
         // Process results starting from the last index we saw
@@ -67,6 +98,12 @@ export function useSpeechRecognition() {
       };
 
       recognition.onerror = (event: any) => {
+        // Clear silence timeout on error
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+
         // Ignore "aborted" error during cleanup
         if (event.error === "aborted") {
           if (!isCleaningUpRef.current) {
@@ -83,7 +120,17 @@ export function useSpeechRecognition() {
 
         if (event.error === "no-speech") {
           setError("No speech detected. Please try again.");
-          console.warn("No speech detected");
+          console.warn("No speech detected - user may need to speak louder or check microphone");
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.abort();
+            } catch (e) {
+              // Ignore abort failures
+            }
+          }
+          recognitionRef.current = null;
+          initializedRef.current = false;
+          setListening(false);
           return;
         }
 
@@ -93,6 +140,11 @@ export function useSpeechRecognition() {
       };
 
       recognition.onend = () => {
+        // Clear silence timeout when recognition ends
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
         setListening(false);
         console.log("Speech recognition ended");
       };
@@ -130,27 +182,42 @@ export function useSpeechRecognition() {
     }
   }, []);
 
+  const resetRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {
+        // Ignore abort errors during cleanup
+      }
+    }
+    recognitionRef.current = null;
+    initializedRef.current = false;
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       isCleaningUpRef.current = true;
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (e) {
-          // Ignore abort errors during cleanup
-        }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
       }
+      resetRecognition();
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, []);
+  }, [resetRecognition]);
 
   const startListening = useCallback(async (lang: string = "en-IN") => {
     if (listening) {
       console.log("Already listening");
       return;
+    }
+
+    // Clear any previous timeout
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
     }
 
     // Request microphone permission first
@@ -159,6 +226,9 @@ export function useSpeechRecognition() {
       return;
     }
 
+    // Reset recognition state for a fresh start
+    resetRecognition();
+    
     // Initialize speech recognition
     const initialized = initializeSpeechRecognition();
     if (!initialized || !recognitionRef.current) {
@@ -172,14 +242,20 @@ export function useSpeechRecognition() {
       finalTranscriptRef.current = "";
       lastResultIndexRef.current = 0;
       setError(null);
+      hasReceivedAudioRef.current = false;
       recognitionRef.current.start();
+      console.log("Recognition started, listening for speech...");
     } catch (err: any) {
       console.error("Error starting recognition:", err);
       setError(err.message);
     }
-  }, [listening, requestMicrophonePermission, initializeSpeechRecognition]);
+  }, [listening, requestMicrophonePermission, initializeSpeechRecognition, resetRecognition]);
 
   const stopListening = useCallback(() => {
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
     if (recognitionRef.current && listening) {
       try {
         recognitionRef.current.stop();

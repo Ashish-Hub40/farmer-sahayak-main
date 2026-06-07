@@ -67,20 +67,16 @@ export default function VoicePage() {
       return;
     }
 
-    if (error) {
-      alert(error);
+    if (listening) {
+      stopListening();
       return;
     }
 
-    if (listening) {
-      stopListening();
-    } else {
-      resetTranscript();
-      setLocalText("");
-      const langCode = language?.browserCode || "en-IN";
-      console.log("Starting speech recognition with language:", langCode);
-      startListening(langCode);
-    }
+    resetTranscript();
+    setLocalText("");
+    const langCode = language?.browserCode || "en-IN";
+    console.log("Starting speech recognition with language:", langCode);
+    startListening(langCode);
   };
 
   const handleSend = () => {

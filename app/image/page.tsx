@@ -119,8 +119,13 @@ export default function ImagePage() {
       // Analyze with Plant.id
       const plantResult = await analyzePlantImage(base64Data);
       
-      if (plantResult.success && plantResult.data) {
-        let analysisData = plantResult.data;
+      if (!plantResult.success || !plantResult.data) {
+        const errorMsg = plantResult.error || "Failed to analyze image. Please try again.";
+        setError(errorMsg);
+        return;
+      }
+
+      let analysisData = plantResult.data;
 
       // Translate results if language is not English
       if (analysisData && currentLanguage && currentLanguage !== "en-IN") {
@@ -147,19 +152,15 @@ export default function ImagePage() {
             if (result.status === "fulfilled" && result.value) {
               return result.value;
             }
-            // Fallback to original value if translation failed
-            if (analysisData) {
-              const originalValues = [
-                analysisData.plantName,
-                analysisData.plantDescription,
-                analysisData.disease,
-                analysisData.treatment,
-                analysisData.symptoms,
-                analysisData.prevention,
-              ];
-              return originalValues[index] || "";
-            }
-            return "";
+            const originalValues = [
+              analysisData.plantName,
+              analysisData.plantDescription,
+              analysisData.disease,
+              analysisData.treatment,
+              analysisData.symptoms,
+              analysisData.prevention,
+            ];
+            return originalValues[index] || "";
           });
 
           analysisData = {
@@ -181,13 +182,12 @@ export default function ImagePage() {
 
       // Upload image to Blob storage and save to history
       if (analysisData && preview && sessionId && base64Data) {
-        // Upload to Vercel Blob
         const uploadResult = await uploadImageToBlob(base64Data, `plant-${sessionId}-${Date.now()}.jpg`);
         const imageUrl = uploadResult.success && uploadResult.url ? uploadResult.url : preview;
         
         await savePlantAnalysis({
           sessionId,
-          imageUrl: imageUrl, // Use Blob URL if upload succeeded, fallback to base64
+          imageUrl: imageUrl,
           plantName: analysisData.plantName,
           plantDescription: analysisData.plantDescription,
           plantProbability: analysisData.plantProbability,
@@ -199,10 +199,8 @@ export default function ImagePage() {
           isHealthy: analysisData.isHealthy,
         });
 
-        // Reload history
         const updatedHistory = await getPlantAnalysisHistory(sessionId);
         setHistory(updatedHistory);
-      }
       }
     } catch (err) {
       console.error("Image analysis error:", err);
