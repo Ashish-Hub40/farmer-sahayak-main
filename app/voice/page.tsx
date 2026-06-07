@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, Send, ArrowLeft, Volume2, Copy, Check, ChevronDown, ChevronUp, Brain, Square } from "lucide-react";
+import { Mic, MicOff, Send, ArrowLeft, Volume2, Copy, Check, ChevronDown, ChevronUp, Brain, Square, AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useStore } from "@/store/useStore";
 import { getLanguageByCode } from "@/lib/languages";
 import { useChat } from "@/hooks/useChat";
@@ -17,7 +17,7 @@ export default function VoicePage() {
   const router = useRouter();
   const currentLanguage = useStore((state) => state.currentLanguage);
   const language = getLanguageByCode(currentLanguage);
-  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
+  const { transcript, listening, isSupported, error, startListening, stopListening, resetTranscript } = useSpeechRecognition();
   const [localText, setLocalText] = useState("");
   const [isManuallyEditing, setIsManuallyEditing] = useState(false);
   const { messages, isLoading, sendMessage } = useChat();
@@ -36,9 +36,13 @@ export default function VoicePage() {
     }
   }, [currentLanguage, i18n]);
 
+  // Sync transcript to localText when user is not manually editing
   useEffect(() => {
     if (transcript && !isManuallyEditing) {
-      setLocalText(transcript);
+      // Defer the state update to avoid cascading renders
+      Promise.resolve().then(() => {
+        setLocalText(transcript);
+      });
     }
   }, [transcript, isManuallyEditing]);
 
@@ -58,20 +62,24 @@ export default function VoicePage() {
   };
 
   const handleMicToggle = () => {
-    if (!browserSupportsSpeechRecognition) {
-      alert(t('browserNotSupported'));
+    if (!isSupported) {
+      alert(t('browserNotSupported') || "Speech Recognition not supported in your browser");
+      return;
+    }
+
+    if (error) {
+      alert(error);
       return;
     }
 
     if (listening) {
-      SpeechRecognition.stopListening();
+      stopListening();
     } else {
       resetTranscript();
       setLocalText("");
-      SpeechRecognition.startListening({
-        continuous: true,
-        language: language?.browserCode || "en-IN",
-      });
+      const langCode = language?.browserCode || "en-IN";
+      console.log("Starting speech recognition with language:", langCode);
+      startListening(langCode);
     }
   };
 
@@ -81,7 +89,7 @@ export default function VoicePage() {
       setLocalText("");
       resetTranscript();
       if (listening) {
-        SpeechRecognition.stopListening();
+        stopListening();
       }
     }
   };
@@ -123,7 +131,7 @@ export default function VoicePage() {
     // Stop TTS streaming and speech recognition
     stopStreaming();
     if (listening) {
-      SpeechRecognition.stopListening();
+      stopListening();
     }
     
     setIsExiting(true);
@@ -135,6 +143,17 @@ export default function VoicePage() {
   return (
     <div className={`fixed inset-0 flex flex-col bg-linear-to-br from-purple-50 via-purple-100 to-purple-50 transition-transform duration-300 ${isExiting ? 'translate-x-full' : 'translate-x-0'}`}>
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Error Banner */}
+        {error && (
+          <div className="mx-2 mt-2 sm:mx-3 sm:mt-3 bg-red-50 border-2 border-red-300 rounded-lg sm:rounded-xl p-3 flex gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800">{error}</p>
+              <p className="text-xs text-red-700 mt-1">Please check your microphone permissions in browser settings</p>
+            </div>
+          </div>
+        )}
+        
         <header className="px-2 pt-2 sm:px-3 sm:pt-3">
           <div className="bg-white/60 backdrop-blur-2xl rounded-2xl sm:rounded-3xl border border-white/40 px-3 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -227,24 +246,27 @@ export default function VoicePage() {
                       {/* Text content with markdown rendering */}
                       <div className={`text-sm sm:text-base leading-relaxed ${msg.role === "user" ? "text-white" : "text-gray-800"}`}>
                         <ReactMarkdown 
+                          key="markdown"
                           remarkPlugins={[remarkGfm]}
                           components={{
                             // Custom components with explicit styling
-                            h1: ({node, ...props}) => <h1 className={`text-xl font-bold mt-4 mb-2 ${msg.role === "user" ? "text-white" : "text-gray-900"}`} {...props} />,
-                            h2: ({node, ...props}) => <h2 className={`text-lg font-bold mt-3 mb-2 ${msg.role === "user" ? "text-white" : "text-gray-900"}`} {...props} />,
-                            h3: ({node, ...props}) => <h3 className={`text-base font-bold mt-2 mb-1 ${msg.role === "user" ? "text-white" : "text-gray-900"}`} {...props} />,
-                            p: ({node, ...props}) => <p className="my-2" {...props} />,
-                            strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
-                            em: ({node, ...props}) => <em className="italic" {...props} />,
-                            a: ({node, ...props}) => <a className={`underline ${msg.role === "user" ? "text-purple-200" : "text-purple-600"} hover:opacity-80`} target="_blank" rel="noopener noreferrer" {...props} />,
-                            ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-                            ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
-                            li: ({node, ...props}) => <li className="my-1" {...props} />,
-                            code: ({node, inline, ...props}: any) => 
+                            h1: ({...props}) => <h1 className={`text-xl font-bold mt-4 mb-2 ${msg.role === "user" ? "text-white" : "text-gray-900"}`} {...props} />,
+                            h2: ({...props}) => <h2 className={`text-lg font-bold mt-3 mb-2 ${msg.role === "user" ? "text-white" : "text-gray-900"}`} {...props} />,
+                            h3: ({...props}) => <h3 className={`text-base font-bold mt-2 mb-1 ${msg.role === "user" ? "text-white" : "text-gray-900"}`} {...props} />,
+                            p: ({...props}) => <p className="my-2" {...props} />,
+                            strong: ({...props}) => <strong className="font-bold" {...props} />,
+                            em: ({...props}) => <em className="italic" {...props} />,
+                            a: ({...props}) => <a className={`underline ${msg.role === "user" ? "text-purple-200" : "text-purple-600"} hover:opacity-80`} target="_blank" rel="noopener noreferrer" {...props} />,
+                            ul: ({...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+                            ol: ({...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+                            li: ({...props}) => {
+                              return createElement('li', {className: "my-1", ...props});
+                            },
+                            code: ({inline, ...props}: {inline?: boolean; children?: React.ReactNode}) => 
                               inline 
                                 ? <code className="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs" {...props} />
                                 : <code className="block bg-gray-800 text-white p-3 rounded my-2 overflow-x-auto" {...props} />,
-                            blockquote: ({node, ...props}) => <blockquote className={`border-l-4 pl-4 my-2 italic ${msg.role === "user" ? "border-purple-300" : "border-gray-300"}`} {...props} />,
+                            blockquote: ({...props}) => <blockquote className={`border-l-4 pl-4 my-2 italic ${msg.role === "user" ? "border-purple-300" : "border-gray-300"}`} {...props} />,
                           }}
                         >
                           {msg.content}

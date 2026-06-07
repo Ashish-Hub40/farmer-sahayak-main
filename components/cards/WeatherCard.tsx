@@ -41,19 +41,22 @@ export default function WeatherCard() {
       if (geoError.message) return geoError.message;
       switch (geoError.code) {
         case 1:
-          return "Location access denied. Please allow location permissions and try again.";
+          return "Location permission denied. Please enable location access in browser settings.";
         case 2:
-          return "Location information is unavailable. Try again in a moment.";
+          return "Location information is unavailable. Please try again.";
         case 3:
           return "Location request timed out. Please retry.";
       }
     }
-    return "Unable to access location. Please try again.";
+    return "Unable to access location. Please check your browser settings and try again.";
   };
 
   const setLocationFromIp = useCallback(async () => {
     try {
-      const response = await fetch("https://ipapi.co/json/");
+      const response = await fetch("https://ipapi.co/json/", {
+        signal: AbortSignal.timeout(5000), // 5 second timeout
+      });
+      
       if (!response.ok) {
         throw new Error("IP location lookup failed");
       }
@@ -75,78 +78,114 @@ export default function WeatherCard() {
     setLoading(true);
     setLocationError("");
 
+    let hasLocation = false;
+
+    // First, try browser geolocation
     if (typeof window !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation(position.coords.latitude.toString(), position.coords.longitude.toString());
-          setLoading(false);
-        },
-        async (error) => {
-          try {
-            // Log error code and message for debugging without showing empty object
-            if (error instanceof GeolocationPositionError) {
-              console.error(`Geolocation error [${error.code}]: ${error.message}`);
-            } else {
-              console.error("Geolocation error:", error);
-            }
-            
-            const fallbackSuccess = await setLocationFromIp();
-            if (fallbackSuccess) {
-              setLoading(false);
-            } else {
-              setLocationError(getGeoErrorMessage(error));
-              setLoading(false);
-            }
-          } catch (err) {
-            console.error("Error in geolocation error handler:", err);
-            setLocationError("An unexpected error occurred while determining location.");
-            setLoading(false);
-          }
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        }
-      );
-    } else {
       try {
-        const fallbackSuccess = await setLocationFromIp();
-        if (fallbackSuccess) {
-          setLoading(false);
-        } else {
-          setLocationError("Geolocation is not supported by your browser.");
-          setLoading(false);
+        await new Promise<void>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setLocation(position.coords.latitude.toString(), position.coords.longitude.toString());
+              hasLocation = true;
+              console.log("Location obtained from browser");
+              resolve();
+            },
+            (error) => {
+              const errorMsg = getGeoErrorMessage(error);
+              console.warn(`Browser geolocation error [${error.code}]: ${error.message}`, errorMsg);
+              reject(new Error(errorMsg));
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 8000,
+              maximumAge: 600000,
+            }
+          );
+        });
+      } catch (err) {
+        console.error("Browser geolocation failed, trying IP fallback:", err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      console.warn("Geolocation not supported");
+    }
+
+    // If browser geolocation failed, try IP-based location
+    if (!hasLocation) {
+      try {
+        const success = await setLocationFromIp();
+        if (success) {
+          hasLocation = true;
+          console.log("Location obtained from IP");
         }
       } catch (err) {
-        console.error("Error in geolocation fallback:", err);
-        setLocationError("An unexpected error occurred while determining location.");
-        setLoading(false);
+        console.error("IP location fallback failed:", err instanceof Error ? err.message : String(err));
       }
     }
+
+    // If both methods failed, show error
+    if (!hasLocation) {
+      setLocationError(
+        "Could not determine your location. Please ensure location services are enabled and try again."
+      );
+    }
+
+    setLoading(false);
   }, [setLocation, setLocationFromIp]);
 
   const fetchWeather = useCallback(async () => {
     if (!lat || !lon) return;
     setLoading(true);
-    const result = await getWeather(lat, lon, currentLanguage.split("-")[0]);
-    if (result.success && result.data) {
-      setWeather(result.data);
+    try {
+      const langCode = currentLanguage?.split("-")[0] || "en";
+      const result = await getWeather(lat, lon, langCode);
+      if (result.success && result.data) {
+        setWeather(result.data);
+        setLocationError(""); // Clear any previous errors
+      } else {
+        console.error("Weather fetch failed:", result);
+        const errorMsg = result.error || "Unable to fetch weather. Please try again.";
+        setLocationError(errorMsg);
+        setWeather(null);
+      }
+    } catch (error) {
+      console.error("Error fetching weather:", error);
+      const errorMsg = error instanceof Error ? error.message : "An unexpected error occurred";
+      setLocationError(errorMsg);
+      setWeather(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [lat, lon, currentLanguage]);
 
   useEffect(() => {
+    // Fetch weather whenever location changes
     if (lat && lon) {
       fetchWeather();
-    } else {
+    }
+  }, [lat, lon, fetchWeather]);
+
+  useEffect(() => {
+    // Request location on mount if not already set
+    if (!lat || !lon) {
+      console.log("No location set, requesting location on mount...");
       requestLocation();
     }
-  }, [lat, lon, fetchWeather, requestLocation]);
+  }, []); // Run only once on mount
+
+  useEffect(() => {
+    // Request location if it becomes null
+    if (!lat || !lon) {
+      console.log("Location cleared, requesting new location...");
+      requestLocation();
+    }
+  }, [lat, lon, requestLocation]);
 
   const handleSpeak = () => {
     if (!weather) return;
-    const text = `${t('weather')}: ${weather.description}, ${weather.temperature} डिग्री, नमी ${weather.humidity} प्रतिशत`;
+    const humidityLabel = t('humidity') || 'Humidity';
+    const tempUnit = t('temperature') || 'Temperature';
+    const text = `${t('weather')}: ${weather.description}, ${weather.temperature} degrees, ${humidityLabel} ${weather.humidity} percent`;
     speakNative(text, language?.browserCode || "en-IN");
   };
 

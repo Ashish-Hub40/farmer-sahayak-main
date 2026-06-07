@@ -1,12 +1,8 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -65,11 +61,13 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Prevent text size adjustment on mobile */
+/* Prevent text size adjustment on mobile - needed for iOS Safari and Chrome Android */
 body {
   -webkit-text-size-adjust: 100%;
-  -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
 }
 
 /* Improve audio controls styling */
@@ -81,4 +79,21 @@ audio::-webkit-media-controls-play-button,
 audio::-webkit-media-controls-mute-button {
   background-color: rgba(34, 197, 94, 0.1);
   border-radius: 50%;
+}
+
+/* Standard line-clamp support */
+.line-clamp {
+  line-clamp: var(--line-clamp, 1);
+}
+
+.line-clamp-2 {
+  line-clamp: 2;
+}
+
+.line-clamp-3 {
+  line-clamp: 3;
+}
+
+.line-clamp-4 {
+  line-clamp: 4;
 }

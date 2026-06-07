@@ -82,6 +82,7 @@ export default function CropDoctorPage() {
   }, [sessionId, lat, lon, currentLanguage]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -373,8 +374,10 @@ export default function CropDoctorPage() {
                     </div>
                   ) : (
                     <button
+                      type="button"
                       onClick={generateAIAdvice}
                       disabled={loadingAdvice}
+                      aria-label={loadingAdvice ? `${t('generating')}...` : t('getPersonalizedAdvice')}
                       className="w-full py-4 bg-linear-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-semibold flex items-center justify-center gap-2 hover:from-purple-600 hover:to-indigo-700 transition-all disabled:opacity-50"
                     >
                       {loadingAdvice ? (

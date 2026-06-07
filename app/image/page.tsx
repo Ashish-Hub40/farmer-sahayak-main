@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { Camera, ArrowLeft, X, Loader2, AlertCircle, CheckCircle, Info, Volume2, Leaf, History, Clock, Trash2 } from "lucide-react";
 import { useStore } from "@/store/useStore";
-import { analyzePlantImage, analyzeCropHealth } from "@/actions/analyze-image";
+import { analyzePlantImage } from "@/actions/analyze-image";
 import { translateText } from "@/actions/translate-text";
 import { savePlantAnalysis, getPlantAnalysisHistory, deleteSinglePlantAnalysis } from "@/actions/plant-history";
 import { speakNative } from "@/lib/audio";
@@ -116,31 +116,11 @@ export default function ImagePage() {
     setResult(null);
 
     try {
-      // Try Plant.id first
+      // Analyze with Plant.id
       const plantResult = await analyzePlantImage(base64Data);
       
-      let analysisData: AnalysisResult | null = null;
       if (plantResult.success && plantResult.data) {
-        analysisData = plantResult.data;
-      } else {
-        // Show specific error from Plant.id if it's an API key or configuration issue
-        if (plantResult.error && (plantResult.error.includes("API key") || plantResult.error.includes("not configured"))) {
-          setError(plantResult.error);
-          return;
-        }
-        
-        // Fallback to Crop.health
-        const cropResult = await analyzeCropHealth(base64Data);
-        
-        if (cropResult.success && cropResult.data) {
-          analysisData = cropResult.data;
-        } else {
-          // Show specific error message from the API
-          const errorMsg = cropResult.error || plantResult.error || "Failed to analyze image. Please try again.";
-          setError(errorMsg);
-          return;
-        }
-      }
+        let analysisData = plantResult.data;
 
       // Translate results if language is not English
       if (analysisData && currentLanguage && currentLanguage !== "en-IN") {
@@ -222,6 +202,7 @@ export default function ImagePage() {
         // Reload history
         const updatedHistory = await getPlantAnalysisHistory(sessionId);
         setHistory(updatedHistory);
+      }
       }
     } catch (err) {
       console.error("Image analysis error:", err);
@@ -435,13 +416,17 @@ export default function ImagePage() {
               </div>
             )}
 
+            <label htmlFor="plant-image-input" className="sr-only">
+              Select image for plant analysis
+            </label>
             <input
+              id="plant-image-input"
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={handleFileSelect}
               className="hidden"
+              aria-label="Select image for plant analysis"
             />
 
             {/* Loading State */}

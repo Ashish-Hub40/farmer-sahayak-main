@@ -6,6 +6,7 @@ import { useStore } from "@/store/useStore";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import WeatherCard from "./cards/WeatherCard";
+import { useGeolocation } from "@/hooks/useGeolocation";
 import { 
   Mic, 
   MessageCircle, 
@@ -23,6 +24,9 @@ export default function Dashboard() {
   const { t, i18n } = useTranslation();
   const currentLanguage = useStore((state) => state.currentLanguage);
   const router = useRouter();
+  
+  // Automatically detect user's location
+  useGeolocation();
 
   useEffect(() => {
     if (currentLanguage) {
@@ -245,16 +249,7 @@ export default function Dashboard() {
       </div>
       
       {/* Grass Animation at Bottom */}
-      <div className="fixed bottom-0 left-0 right-0 w-full h-20 md:h-28 pointer-events-none z-40">
-        <Image
-          src="/grass.gif"
-          alt="Grass"
-          width={1920}
-          height={112}
-          className="w-full h-full object-cover object-bottom"
-          priority
-        />
-      </div>
+      <div className="fixed bottom-0 left-0 right-0 w-full h-20 md:h-28 pointer-events-none z-40 bg-gradient-to-t from-green-400 to-transparent opacity-30"></div>
     </div>
   );
 }

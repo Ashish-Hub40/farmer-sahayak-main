@@ -1,5 +1,12 @@
 "use server";
 
+// Map smaller towns to their nearby major cities for better recognition
+const locationMapping: { [key: string]: string } = {
+  "Nawābganj": "Kanpur",
+  "Nawabganj": "Kanpur",
+  "Nawabganj, UP": "Kanpur",
+};
+
 export async function getWeather(lat: string, lon: string, lang: string = "en") {
   try {
     const apiKey = process.env.OPENWEATHER_API_KEY;
@@ -17,6 +24,9 @@ export async function getWeather(lat: string, lon: string, lang: string = "en") 
     }
 
     const data = await response.json();
+    
+    // Use mapped location name if available, otherwise use API response
+    const displayLocation = locationMapping[data.name] || data.name;
 
     return {
       success: true,
@@ -27,9 +37,9 @@ export async function getWeather(lat: string, lon: string, lang: string = "en") 
         description: data.weather[0].description,
         icon: data.weather[0].icon,
         windSpeed: data.wind.speed,
-        location: data.name,
+        location: displayLocation,
       },
-      formatted: `Current weather in ${data.name}: ${data.weather[0].description}, Temperature: ${Math.round(data.main.temp)}°C, Humidity: ${data.main.humidity}%, Wind Speed: ${data.wind.speed} m/s`,
+      formatted: `Current weather in ${displayLocation}: ${data.weather[0].description}, Temperature: ${Math.round(data.main.temp)}°C, Humidity: ${data.main.humidity}%, Wind Speed: ${data.wind.speed} m/s`,
     };
   } catch (error) {
     console.error("Weather fetch error:", error);
